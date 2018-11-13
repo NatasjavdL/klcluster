@@ -1,0 +1,287 @@
+---
+title: "Introduction to klcluster package"
+author: "Natasja van de L'Isle"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography: references.bib
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  out.width = '75%',
+  out.height = '75%',
+  dev = 'svg'
+)
+```
+
+The klcluster package is specifically developed to cluster trajectories. This 
+tutorial will use the example data that is attached to the package to illustrate
+how the package works. This data is provided by R. Mann 
+[see @mann2010; @mann2014; @mann2016]
+In case you would like some more background information on the (k,l)-clsutering
+alorithm I would recommend you to read [@kl_unpublished]
+
+
+## Setup
+
+Before we start you first need to install the package. 
+
+To install the package use `install.packages(klcluster)`.
+Do not forget to load it into the environment: `library(klcluster)`
+***NOTE: need to change this in order to download from git instead of CRAN***
+
+In case you want to work with data from movebank, also install and load the
+"move" package. For a detailed tutorial see [Move package introduction](https://cran.r-project.org/web/packages/move/vignettes/move.pdf)
+
+
+## Loading data
+
+There are 4 datasets attached to the package from R. Mann. Here we will use the 
+dataset "brc", which contains 24 paths. The standard format the package uses is 
+the same as for "brc". 
+
+Note that when you are using your own data, ensure that the coordinates are ordered
+by timestamp.
+
+
+```{r, load data}
+library(klcluster)
+
+print(getwd())
+
+data(brc)
+```
+
+The standard data format consists of a list of data.frames, where each data.frame 
+is one path. The data.frames contain two columns, long and lat, and each row 
+corresponds to a coordinate of the path.
+
+```{r, show structure data}
+str(brc[1:3])
+
+```
+
+## Similarity measures
+
+There are three similarity measures that can be used. Continuous Frechet, discrete
+frechet and Dynamic Time Warping(DTW).
+
+```{r, similarity}
+# set seed for reproducibility
+set.seed(0)
+
+# choose two paths
+p1 <- brc[[1]]
+p2 <- brc[[2]]
+
+frechet_distance(p1, p2, 0.001) # 0.001 denotes the precision - see documentation
+discrete_frechet(p1, p2)
+dtw_dist(p1, p2, TRUE, normalize_dist = TRUE)
+
+```
+
+## Simplification
+
+Given that the clustering algorithms will simplify the paths, we will show how this
+works. You need to specify the number of data points the simplified path should
+have. Furthermore, if you would want to simplify all paths at once use the
+function`simplify_all()`. In case you would like to simplify to epsilon, use `simplify_curve()`. The simplification algorithm implemented uses the
+continuous frechet distance.
+
+```{r, simplify, fig.show='hold'}
+
+p1_simple <- bin_simplify(path = p1, size = 20, precision = 1)
+
+library(ggplot2)
+
+plot1 <- ggplot() +  geom_path(data = p1, aes(x = lat, y = long))
+
+plot2 <- plot1 +
+  geom_path(data = p1_simple, aes(x = lat, y = long), col = "red") +
+  geom_point(data = p1_simple, aes(x = lat, y = long), col = "red")
+
+plot2 + theme_classic()
+
+```
+
+
+## Clustering
+
+The package contains several methods for clustering. The main method we advise you to use is the (k,l)-clustering algorithm as it is the most efficient algorithm.
+
+However, you can also use the single linkage, k-median, k-means or 1-NN algorithm.
+Note that k-median and k-means take as input an initial clustering, hence, you will
+first need to run either (k,l)-clustering or single linkage first.
+
+Each of the methods returns a set of centers which are simplified to target
+value 'l'. Input 'k' denotes the number of clusters we want. It is also possible
+to specify the 'radius' in (k,l)-clustering and single linkage. If you omit 'k',
+the algorithm will return the number of clusters such that the radius is smaller
+than or equal to input 'radius'. However, note that it might be a good idea to
+first pick a 'k' to get a sense of the value for 'radius' which equals the cost
+that can also be found in the output.
+
+Also note that the 1-NN algorithm only has one solution, given that you always
+match a path with its closest neighbor. Moreover, this solution never contains
+a cluster containing only one path as each path is mapped to its closest neighbor.
+
+### (k,l)-clustering algorithm
+
+This algorithm is an efficient clustering algorithm. It randomly picks a trajectory
+as a first center. Next, it find the trajectory that is furthest away to choose
+as the next center. It continues until either 'k' or 'radius' is satisfied.
+
+```{r, kl-cluster}
+brc_kl <- k_l_cluster(brc, k = 5, l = 15)
+
+# the output has the following structure:
+str(brc_kl)
+```
+
+```{r, show access}
+
+# you can access any element as you would in a normal list:
+brc_kl$clusters
+```
+
+#### Plotting (k,l)-cluster
+
+Plotting the clusters can be done in many ways. The package contains three built
+in functions to plot the clusters. Note that these functions require additional
+packages (data.table, ggplot2, colorspace, cowplot, ggmap, mapproj, sp).
+
+
+```{r, plot clustering, fig.show='hide'}
+library(data.table)
+library(ggplot2)
+library(colorspace)
+```
+
+```{r, plot kl}
+plot_all_clust_grid(brc, brc_kl, "(k,l)-clustering")
+
+```
+
+We can also use the ggmap package [@ggmap_ref] to plot the trajectories
+on a map.
+
+```{r, loadmaps-packages, echo = FALSE}
+require(ggmap) #these packages are necessary to work with google maps
+require(mapproj)
+require(sp)
+require(raster)
+```
+
+```{r, plot_maps}
+plot_all_clust_map(brc, brc_kl, "(k,l)-clustering on map", map_type = "terrain")
+```
+
+
+### Single linkage and 1NN
+
+Now we can compare the (k,l)-clustering algorithm to the other methods. First we
+use single linkage and 1NN.
+
+The 1NN algorithm can give a rough idea of how the trajectories are clustered.
+Each trajectory is mapped to its closest neighbor.
+
+Single linkage builds a hierarchy of clusters. It then picks the clusters,
+depending on 'k' or 'radius'. Note that this is not a heuristic algorthm, thus,
+it can take some time to run for large datasets.
+
+```{r, compare}
+
+brc_sl <- single_link(brc, k = 5, l = 15)
+brc_sl$clusters
+
+brc_nn <- kNN_trajectories(brc, l = 15)
+brc_nn$clusters
+
+```
+
+```{r, compare2-plot,  fig.show = 'hold', echo = FALSE}
+
+print(plot_all_clust(brc, brc_sl, "Single linkage clustering"))
+
+print(plot_all_clust(brc, brc_nn, "1NN clustering"))
+
+```
+
+
+### K-median and K-means
+
+We can also try to improve the centers by using k-median and k-means.We can update specfic clusters or we can update all. The standard number of iterations equals 1, but this can
+be changed by setting max_iter. If verbose is set to true, the algorithms will
+also output the improvements made on the costs.
+
+#### K-median
+
+```{r, k-median}
+brc_kmed <- kl_median(brc, brc_kl, max_iter = 5)
+
+plot_all_clust_grid(brc, brc_kmed, "k-median")
+
+```
+
+
+#### K-means
+
+```{r, k-means}
+brc_kmean <- kl_means(brc, brc_kl, max_iter = 5)
+
+plot_all_clust_grid(brc, brc_kmean, "k-means")
+
+```
+
+
+### fsp-method
+
+Next to the implemented clustering algorithms, a new method has been developed
+to improve the quality of the centers. Where each clustering algorithm uses the
+original coordinates from a trajectory as center, the fsp-method can have any
+coordinate. Assume we have a clustering. Then for each cluster, the coordinates
+are mapped to one coordinate of the corresponding centers. Each center is then
+updated to correspond to the mean of all points mapped to this point.
+
+#### fsp - dtw with input original centers from output clustering
+
+```{r, fsp1}
+
+fsp_dtw1 <- fsp_centers(brc, brc_kl, dist_measure = "dtw", dtw_settings = c(1, TRUE, TRUE))
+
+plot_all_clust_grid(brc, fsp_dtw1, "fsp method dtw - use original center")
+
+```
+
+#### fsp - dtw with input original path corresponding to center from output clustering
+
+```{r, fsp2}
+fsp_dtw2 <- fsp_centers(brc, brc_kl, dist_measure = "dtw", dtw_settings = c(2, TRUE, TRUE))
+plot_all_clust_grid(brc, fsp_dtw2, "fsp method dtw - use original path")
+
+```
+
+#### fsp - dtw with input sampled center
+
+```{r, fsp3}
+fsp_dtw3 <- fsp_centers(brc, brc_kl, dist_measure = "dtw", dtw_settings = c(3, TRUE, TRUE))
+plot_all_clust_grid(brc, fsp_dtw3, "fsp method dtw - sampled along center to 15% path size")
+
+```
+
+#### fsp - dtw with input center with more points
+```{r, fsp4}
+fsp_dtw4 <- fsp_centers(brc, brc_kl, dist_measure = "dtw", dtw_settings = c(4, TRUE, TRUE))
+plot_all_clust_grid(brc, fsp_dtw4, "fsp method dtw - simplified original path to 10% of size")
+
+```
+
+
+
+## References

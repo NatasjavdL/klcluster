@@ -1,0 +1,125 @@
+---
+title: "kl clustering using movebank data"
+author: "Natasja van de L'Isle"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = TRUE
+)
+
+library(klcluster)
+library(move)
+```
+
+Note that you need the move package.
+
+Add reference details. For more information see....
+In order to access the dataset you need to login to movebank and accept the
+terms and conditions.
+
+```{r}
+move_id <- "your username"
+pw <- "your password"
+```
+
+
+```{r echo = FALSE}
+move_id <- "natas_01"
+pw <- "Pn6UGCRW!!"
+```
+
+```{r get_data}
+
+move_login <- movebankLogin(move_id, pw)
+
+dt <- getMovebankData(study="Eastern flyway spring migration of adult white storks (data from Rotics et al. 2018)",login=move_login)
+
+# this dataset contains for each animal multiple years of data
+# we need to split the data correctly
+
+min_year = as.integer(format(min(dt$timestamp), "%Y"))
+max_year = as.integer(format(max(dt$timestamp), "%Y"))
+
+clust_dt = c()
+for(i in min_year:max_year) {
+  # subset by year
+  dt_tmp = subset(dt, format(timestamp, "%Y") %in% as.character(i))
+  
+  # transform data to right format for that year
+  clust_format = transform_move(dt_tmp)
+  
+  # add to complete list
+  clust_dt <- c(clust_dt, clust_format)
+  
+}
+
+```
+
+
+Very large dataset - hence we simplify paths before we start
+```{r simplify}
+# simplify to epsilon
+# you can also simplify to a specific number of data points but this takes 
+# a lot more time
+# simple_dt <- simplify_all(clust_dt, 50, 1)
+
+simple_dt <- list()
+eps = 0.05
+
+for(i in 1:length(clust_dt)) {
+  
+  simple_dt[[i]] <- simplify_curve(clust_dt[[i]], eps)
+  
+}
+
+library(ggplot2)
+
+q <- ggplot()
+
+for(i in 1:length(simple_dt)) {
+
+  q <- q + geom_path(data = simple_dt[[i]], aes(x = long, y = lat), col = "grey")
+}
+
+print(q)
+
+```
+
+Clustering test
+
+```{r kl cluster}
+set.seed(10)
+kl <- k_l_cluster(simple_dt, k = 3, l = 15)
+
+```
+
+```{r, plot clustering, fig.show='hide'}
+library(data.table)
+library(ggplot2)
+library(colorspace)
+```
+
+```{r, plot kl}
+plot_all_clust_grid(simple_dt, kl, "(k,l)-clustering")
+
+```
+
+```{r, loadmaps-packages, echo = FALSE}
+require(ggmap) #these packages are necessary to work with google maps
+require(mapproj)
+require(sp)
+require(raster)
+```
+
+```{r, plot_maps}
+plot_all_clust_map(simple_dt, kl, "(k,l)-clustering on map", map_type = "terrain", zoom_ggmap = 5)
+```
