@@ -14,3 +14,18 @@ This package is developed under the GLP 2.0 license in accordance with other pac
 To install the package, first please install the devtools package: `install.packages(devtools)`.
 Next you can easily install this package by using the install_github function: `install_github("NatasjavdL/klcluster")`.
 
+Note that it was built on a Windows machine. In case you are installing on Windows and you get the following error:
+```
+Error: loading failed
+Execution halted
+*** arch - x64
+ERROR: loading failed for 'i386'
+```
+
+Then try the following:
+```
+library(devtools)   
+options(devtools.install.args = "--no-multiarch")   
+install_github("NatasjavdL/klcluster")   
+```
+
